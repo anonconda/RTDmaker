@@ -31,7 +31,7 @@ parser = ArgumentParser(description=description, formatter_class=RawTextHelpForm
 parser.add_argument('--assemblies',
                     dest="ass_dir",
                     action="store", default=None,
-                    help="Path of the folder containing the transcriptome assemblies (GTF format) to be analyzed.")
+                    help="Path of the folder containing the new transcriptome assemblies (GTF format) to be analyzed.")
 
 parser.add_argument('--references',
                     dest="ref_dir",
@@ -75,14 +75,15 @@ parser.add_argument("--tpm",
 parser.add_argument("--fragment-len",
                     dest="len_th",
                     type=float, default=0.7,
-                    help="Minimum percentage of gene-length coverage below which a transcript is identified as "
-                         "fragment. Value must be within 0 and 1. Default: 0.7")
+                    help="Fragment transcript in the gene model will be filtered if the length is less than this "
+                         "percentage of the gene length. Value must be within 0 and 1. Default: 0.7")
 
 parser.add_argument("--antisense-len",
                     dest="antlen_th",
                     type=float, default=0.5,
-                    help="Minimum percentage of gene-length coverage below which a 'monoexonic-antisense' transcript "
-                         "in the opposite strand is identified as fragment. Value must be within 0 and 1. Default: 0.5")
+                    help="Monoexonic-antisense fragment transcript in the gene model will be filtered if the transcript "
+                         "is in the opposite strand and the length is less than this percentage of the gene length. "
+                         "Value must be within 0 and 1. Default: 0.5")
 
 ###
 
@@ -110,7 +111,7 @@ parser.add_argument("--keep",
 
 parser.add_argument('--outpath',
                     dest="outpath", default=None,
-                    help="Path of the output folder.")
+                    help="Path of the output folder to save the results.")
 
 parser.add_argument('--prefix',
                     dest="prefix", default=None,
@@ -118,7 +119,7 @@ parser.add_argument('--prefix',
 
 parser.add_argument('--outname',
                     dest="outname", default=None,
-                    help="Name of the output file.")
+                    help="Prefix of the output file names.")
 
 
 def main():

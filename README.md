@@ -26,17 +26,22 @@ Pipeline for the creation of High-Quality Reference Transcriptome Datasets.
 RTDmaker is a computational pipeline to generate High-Quality transcriptome annotations, known as Reference-Transcript-Datasets (RTDs). Currently, RTDmaker consist of one module (ShortReads) to process transcript assemblies from RNA-seq data through a stringent filtering process with the option to incorporate available reference annotations (Fig. 1).
 
 This module identifies and removes: 
+
 1. Redundant transcripts 
-   - Transcripts with identical subset of intron co-ordinates of another transcript. The start coordinate of the first exon or the end coordinate of the last exon could be different. (Fig. 2)
+   - Transcripts with identical combination of intron combinations of another transcript. The start coordinate of the first exon or the end coordinate of the last exon could be different. (Fig. 2)
 
 2. Transcripts with ambiguous information
-   - Unstranded transcripts for stranded RNA-seq data, transcripts where the scaffold is not in the Genome FASTA;    mono-exonic fragments that are antisense of a longer gene, which could be artifacts of strand labelling process (Fig. 3)
+   - Unstranded transcripts for stranded RNA-seq data
+   - Ttranscripts with annotations of wrong scaffold/chromosome names  comparing to the provided genome reference. 
+   - Mono-exonic fragments that are antisense of a longer gene, which could be artifacts of strand labelling process (Fig. 3)
 
 3. Transcripts poorly supported by reads
-   - Transcripts containing Splice-Junctions with an insufficient number of uniquely mapped reads; transcripts with low overall abundance (TPM) in the RNA-seq datasets
+   - Transcripts containing Splice-Junctions with an insufficient number of uniquely mapped reads.
+   - Transcripts with low TPM (transcript per million reads) abundance in a certain number of samples.
 
 4. Fragmentary and chimeric transcripts
-   - Transcripts whose length is much shorter than the encompassing locus (fragment); transcripts which overlap two or more distinct loci (chimeric) (Fig. 4)
+   - Fragments: transcripts whose length is much shorter than the encompassing locus.
+   - Chimeric: transcripts which overlap two or more distinct loci (Fig. 4)
 
 
 ![Fig1_RTDmaker_Readme.PNG](https://drive.google.com/uc?export=view&id=1WArvkKiOamBOauXrjqH4IzFDoj4J1DNl)
@@ -55,7 +60,7 @@ This module identifies and removes:
 
 
 ![Fig4_RTDmaker_Readme.PNG](https://drive.google.com/uc?export=view&id=1G_B51paA-6LnG5DyqMr0aDJvxHnKERTY)
-**Figure 4.** **Filtering of fragmentary and chimeric transcripts.** The pipeline groups transcripts into loci with similar start-end exons (**white**). Then, for each locus it removes (as fragments) encompassed transcripts that are much shorter than the locus (**yellow**). Next, it identifies transcripts overlapping two distinct loci (**grey**), and if the overlapping transcripts are proportionally less than the transcripts of the distinct locis, they are removed as chimeric (**grey**). Conversely, if the overlapping transcripts are proportionally more than those of the distinct groups (**white**), then these are removed as fragments and the longer, overlapping transcripts are kept.
+**Figure 4.** **Filtering of fragmentary and chimeric transcripts.** The pipeline groups transcripts into loci with similar start-end exons (**white**). Then, for each locus it removes (as fragments) encompassed transcripts that are much shorter than the locus (**yellow**). Next, it identifies the group of transcripts overlapping two distinct loci (**grey**), and if the total number of overlapping transcripts are less than the total number of transcripts of all distinct locis, they are removed as chimeric (**grey**). Conversely, if the overlapping transcripts are more than those of the distinct groups (**white**), then these are removed as fragments and the longer, overlapping transcripts are kept.
 
 
 ----------------------------
@@ -73,14 +78,8 @@ Please beware that the installation of the specific version must be explicit to 
 conda install salmon=1.4.0
 ```
 
-The following packages are not required to execute RTDmaker, but they are useful to perform the pre-processing and assembly of the data:
-- [BioPython v1.78](https://anaconda.org/anaconda/biopython)
-- [STAR v2.7.6a](https://anaconda.org/bioconda/star)
-- [Scallop v0.10.5](https://anaconda.org/bioconda/scallop)
-- [StringTie +v2.1.4](https://anaconda.org/bioconda/stringtie)
-- [Cufflinks v2.2.1](https://anaconda.org/bioconda/cufflinks)
+RTDmaker dependencies require Linux OS.
 
-Many of these programs, including the required ones, are develop for Linux OS.
 
 RTDmaker is ready to use. The compressed file can be directly downloaded from the [GitHub repository](https://github.com/anonconda). Once decompressed, RTDmaker can be used directly from the command line by specifying the path to the main executable `RTDmaker.py`
 
@@ -115,7 +114,7 @@ python /path/to/RTDmaker.py ShortReads --help
 
 ----------------------------
 
-RTDmaker 'ShortReads' module process newly assembled transcriptome annotations from RNA-seq data to generate a High-Quality RTD annotation (Fig. 1). 
+RTDmaker 'ShortReads' module process newly assembled transcriptome annotations from RNA-seq data by using assembly tools, such as StringTie (Pertea et al., 2015) and Scallop (Shao et al., 2017), to generate a High-Quality RTD annotation (Fig. 1). 
 
 This module identifies and removes: 
 1. Redundant transcripts 
@@ -127,22 +126,17 @@ This module identifies and removes:
 ## Input files
 ShortReads takes the following inputs:
 
-1. A folder containing references annotations to integrate into the RTD, in [GTF format](https://www.ensembl.org/info/website/upload/gff.html)
-2. A folder containing de novo assemblies to analyze, in [GTF format](https://www.ensembl.org/info/website/upload/gff.html)
+1. A folder containing available transcript annotations to integrate into the RTD, in GTF format (optional).
+2. A folder containing newly assemble transcript annotations to merge and analyze, in GTF format.
+3. A folder containing paired-end RNA-seq reads FASTQ files from which the new transcript assemblies were generated. 
+4. A folder containing the splice junction SJ.out.tab files generate by the read aligner STAR. If the two-pass mode is used in STAR, the files from are automatically ignored.
+5. The reference genome sequence FASTA file. 
 
-- **NOTE**: The program recursively parse the folders to get the *GTF* annotations. Thus, it is possible to populate these input folders with *symbolic links* of the original folders containing the GTF annotations to analyze.
+- **Notes**: 
 
-- **NOTE**: Because most of the analysis are based on transcripts co-ordinates, it is important for the accuracy of the analyses that all the annotations (new assemblies and references) must refer to the same Genome.
-
-
-3. A folder containing **PAIRED** [FASTQ](https://emea.support.illumina.com/bulletins/2016/04/fastq-files-explained.html) files of the RNA-seq from which the newly assembled transcriptome annotations were generated
-
-- **NOTE**:  The FASTQ files will be autmatically paired to quantify the transcripts. A table reporting how the files are paired will be located in the *report* subfolder (See [Output files](#output-files) below).
-- This implies 2 requirements: 1) the folder **MUST contain ONLY paired FASTQ files**, and 2) the name of 2 PAIRED files must be alphabetically consecutive (Ex: EtOH4h-1_S1_R1_001.fq, EtOH4h-1_S1_R2_001.fq, etc). This is almost always already the case, just check the table *./report/fastq_table.csv* in the *report* subfolder to confirm how the files has been paired.
-
-4. A folder containing the [SJ.out.tab](https://physiology.med.cornell.edu/faculty/skrabanek/lab/angsd/lecture_notes/STARmanual.pdf) files generate by the read aligner [STAR](https://github.com/alexdobin/STAR). Files from 1st pass (STARpass1 in filename) are automatically ignored.
-
-5. The Genome sequence in [FASTA format](http://bioinformatics.org/annhyb/examples/seq_fasta.html)
+-  The program recursively parse the folders to get the GTF files. Thus, it is possible to populate these input folders with symbolic links of the original folders containing the GTF annotations to analyze.
+-  Because most of the analysis are based on transcripts co-ordinates, it is important for the accuracy of the analyses that all the transcript annotations (new assemblies and available transcript references) must refer to the same Genome.
+-  The FASTQ files will be autmatically paired to quantify the transcripts. A table reporting how the files are paired will be located in the report subfolder (See Output files below). This implies 2 requirements: (**1**) the folder MUST contain ONLY paired FASTQ files, and (**2**) the name of 2 PAIRED files must be alphabetically consecutive (Ex: EtOH4h-1_S1_R1_001.fq, EtOH4h-1_S1_R2_001.fq, etc). This is almost always already the case, just check the table ./report/fastq_table.csv in the report subfolder to confirm how the files has been paired.
 
 
 ## Command and options
@@ -157,27 +151,35 @@ python RTDmaker.py ShortReads --assemblies </path/to/assembly-folder> --referenc
 List of options available:
 -**h**, **--help**:   show this help message and exit  
 
---**assemblies**: Path of the folder containing the transcriptome assemblies (GTF format) to be analyzed. 
+--**assemblies**: Path of the folder containing the new transcriptome assemblies (GTF format) to be analyzed. 
+
 --**references**: Path of the folder containing reference annotations (GTF format) to be integrated into the RTD.
 
---**SJ-data**:  Path of the folder containing the splice-junction data ('SJ.out.tab' files) generated by STAR.    
+--**SJ-data**:  Path of the folder containing the splice-junction data ('SJ.out.tab' files) generated by STAR.
+
 --**SJ-reads**:  Minimum number of uniquely-map reads (X) observed in a minimum number of samples (Y) to consider a splice junction (SJ) supported. Default: 2 1 (2 uniquely-map reads in at least 1 sample).
 
 --**genome**: Path of the Genome FASTA file to extract the transcripts sequence to perform transcript quantification 
+
 --**fastq**:  Path of the folder containing the FASTQ files to perform transcript quantification. Supported extensions: 'fq.gz', 'fq', 'fastq.gz', 'fastq'.  
+
 --**tpm**:  Minimum TPM abundance (N), observed in a minimum number of samples (M), to consider a transcript as supported by quantification.Default: 1 1 (1 TPM in at least 1 sample).
 
 --**add**:  Potentially non-coding transcripts to include into the annotation. Options: 'unstranded', 'intronic'. Default: exclude them.
 
---**fragment-len**:  Minimum percentage of gene-length coverage below which a transcript is identified as fragment. Value must be within 0 and 1. Default: 0.7 
---**antisense-len**:  Minimum percentage of gene-length coverage below which a 'monoexonic-antisense' transcript in the opposite strand is identified as fragment. Value must be within 0 and 1. Default: 0.5 
+--**fragment-len**: Fragment transcript in the gene model will be filtered if the length is less than this percentage of the gene length. Value must be within 0 and 1. Default: 0.7 
+
+--**antisense-len**: Monoexonic-antisense fragment transcript in the gene model will be filtered if the transcript is in the opposite strand and the length is less than this percentage of the gene length. Value must be within 0 and 1. Default: 0.5 
 
 --**ram**:  Maximum size (in Gb) of temporary files. Change this value only if your system cannot handle uploading into memory files with the current file size. Default: 8 Gb.
---**keep**:  Intermediary files to keep after the analysis. Options: 'intermediary', 'removed'. Default: remove them.
+
+--**keep**:  Intermediary files to keep after the analysis for debug. Options: 'intermediary', 'removed'. Default: remove them.
 
 --**prefix**:  Prefix to assign to the genes and transcripts IDs in the RTD. Default: outname.
---**outpath**:  Path of the output folder. 
---**outname**:  Name of the output file.
+
+--**outpath**:  Path of the output folder to save the results. 
+
+--**outname**:  Prefix of the output file names.
 
 
 - **NOTE**: The pipeline avoids the re-analysis of a QC step (Fig. 1) if it detects that the intermediary file resulting from that QC analysis already exist. Thus, if the intermediary files are kept (--**keep** intermediary), re-analysis of large datasets can be performed quickly by avoiding re-doing time-consuming steps (such as the **Redunancy QC** or the **transcript quantification**). This is useful to quickly re-start an analysis in the case of an abrupt interruption or to try a different value for a downstream QC step (i.e. no need to re-do transcripts quantification if you only want to try a different fragmentary length threshold). **HOWEVER**, this requires that the user **must manually delete** all the intermediary files that needs to be re-analyzed (which include **all the files downstream** of the file the user wish to re-analyze). 
@@ -220,7 +222,7 @@ The name of the output files is generated as follows:
 Yes, the --**references** argument is optional.
 
 
-#### Can I run the pipeline only for one or more references / no newly assembled annotations?
+#### Can I run the pipeline only for one or more available transcript references / no newly assembled annotations?
 
 Yes, if the --**assemblies** argument is not provided, the pipeline will proceed directly into the Merge QC subpipeline (Fig. 1B). 
 As no assemblies are provided, it is not necessary to specify none of the "read support" arguments, i.e.:
