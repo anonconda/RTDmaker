@@ -13,13 +13,12 @@ description = \
     "Description:\n" + \
     "RTDmaker is a computational pipeline to generate High-Quality transcriptome annotations, known as Reference-Transcript-Datasets (RTDs). " \
     "Currently, RTDmaker is made of one module, 'ShortReads', that process transcriptome annotations assembled from RNA-seq data. " \
-    "In the future, RTDmaker will integrate additional modules to process assemblies generate from other sequencing technologies, such as Long-reads and Nanopore. " \
     "Contact: Juan.Carlos.Entizne@hutton.ac.uk\n"
 
 parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawTextHelpFormatter, prog='RTDmaker')
 
 # Version
-parser.add_argument('-v', '--version', action='version', version='0.1.4')
+parser.add_argument('-v', '--version', action='version', version='0.1.5')
 subparsers = parser.add_subparsers()
 
 # Parser of the module for RNA-seq analysis

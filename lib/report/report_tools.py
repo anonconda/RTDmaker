@@ -3,7 +3,7 @@ import sys
 import time
 import math
 from lib.tools.other_tools import flat
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 # This dictionary is to track the number of accepted and removed models at each Quality Control step
 global_track_dt = OrderedDict()
@@ -126,7 +126,7 @@ def get_distribution_count(values, counts_dt, binwidth=1):
 
 def write_table(transcripts, gtf_obj, outpath, outname):
 
-    # TODO check if it is safe to delete this function
+    # Unused function TODO check if it is safe to delete
 
     # Create an output folder if it doesnt exist
     if not os.path.isdir(outpath):

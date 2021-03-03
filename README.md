@@ -136,7 +136,9 @@ ShortReads takes the following inputs:
 
 -  The program recursively parse the folders to get the GTF files. Thus, it is possible to populate these input folders with symbolic links of the original folders containing the GTF annotations to analyze.
 -  Because most of the analysis are based on transcripts co-ordinates, it is important for the accuracy of the analyses that all the transcript annotations (new assemblies and available transcript references) must refer to the same Genome.
--  The FASTQ files will be autmatically paired to quantify the transcripts. A table reporting how the files are paired will be located in the report subfolder (See Output files below). This implies 2 requirements: (**1**) the folder MUST contain ONLY paired FASTQ files, and (**2**) the name of 2 PAIRED files must be alphabetically consecutive (Ex: EtOH4h-1_S1_R1_001.fq, EtOH4h-1_S1_R2_001.fq, etc). This is almost always already the case, just check the table ./report/fastq_table.csv in the report subfolder to confirm how the files has been paired.
+-  The FASTQ files will be autmatically paired to quantify the transcripts. A table reporting how the files are paired will be located in the report subfolder (See Output files below). This implies 2 requirements: 
+   * (**1**) the folder MUST contain ONLY paired FASTQ files
+   * (**2**) the name of 2 PAIRED files must be alphabetically consecutive (Ex: EtOH4h-1_S1_R1_001.fq, EtOH4h-1_S1_R2_001.fq, etc). This is almost always already the case, just check the table ./report/fastq_table.csv in the report subfolder to confirm how the files has been paired.
 
 
 ## Command and options
@@ -165,7 +167,7 @@ List of options available:
 
 --**tpm**:  Minimum TPM abundance (N), observed in a minimum number of samples (M), to consider a transcript as supported by quantification.Default: 1 1 (1 TPM in at least 1 sample).
 
---**add**:  Potentially non-coding transcripts to include into the annotation. Options: 'unstranded', 'intronic'. Default: exclude them.
+--**add**:  Potentially non-coding transcripts to include into the annotation. Options: 'unstranded', 'intronic', 'overextended', 'uniform'. Default: exclude them.
 
 --**fragment-len**: Fragment transcript in the gene model will be filtered if the length is less than this percentage of the gene length. Value must be within 0 and 1. Default: 0.7 
 
@@ -174,6 +176,10 @@ List of options available:
 --**ram**:  Maximum size (in Gb) of temporary files. Change this value only if your system cannot handle uploading into memory files with the current file size. Default: 8 Gb.
 
 --**keep**:  Intermediary files to keep after the analysis for debug. Options: 'intermediary', 'removed'. Default: remove them.
+
+--**overwrite**: If provided, the program will **delete the output folder and all its content** to perform the analysis from scratch. Default: False.
+
+--**disable**: (Optional) Quality-Control steps to disable during the analysis. Options: 'redundant', 'chimeric'. Default: enable them.
 
 --**prefix**:  Prefix to assign to the genes and transcripts IDs in the RTD. Default: outname.
 
@@ -188,7 +194,7 @@ List of options available:
 Example:
 
 ```
-python RTDmaker.py ShortReads --assemblies ./test_dataset/test_assemblies --references ./test_dataset/test_references --SJ-data ./test_dataset/test_SJdata --SJ-reads 2 1 --genome ./test_dataset/potato_dm_v404_all_pm_un.renamed.fasta --fastq ./test_dataset/test_fastq --tpm 0.1 1 --fragment-len 0.7 --antisense-len 0.5 --add intronic --keep intermediary --ram 8 --outpath ./test_dataset/outfolder --outname test_run --prefix MyRTD 
+python RTDmaker.py ShortReads --assemblies ./test_dataset/test_assemblies --references ./test_dataset/test_references --SJ-data ./test_dataset/test_SJdata --SJ-reads 2 1 --genome ./test_dataset/potato_dm_v404_all_pm_un.renamed.fasta --fastq ./test_dataset/test_fastq --tpm 0.1 1 --fragment-len 0.7 --antisense-len 0.5 --add intronic --keep intermediary --ram 8 --outpath ./test_dataset/MyRTD_output --outname test_run --prefix MyRTD 
 ```
 
 ## Output files
@@ -200,7 +206,10 @@ RTDmaker ShortReads automatically generates an output folder (and subfolder tree
 RTDmaker ShortReads generates the following output files:
 1. A High-Quality RTD in *GTF* format and corresponding transcriptome FASTA
 2. A padded version of the RTD to use for transcript quantification (*GTF* format) and corresponding transcriptome FASTA
-3. Folder containing multiple files reporting information on: **1) the pipeline analysis** (i.e.: Nº of models per QC-step, logfiles of commands executed, etc), **2) input files** (i.e.: summary of references annodations, SJ dataset, etc), and **3) the final RTD**
+3. Folder containing multiple files reporting information on: 
+   * **1) the pipeline analysis** (i.e.: Nº of models per QC-step, logfiles of commands executed, etc)
+   * **2) input files** (i.e.: summary of references annodations, SJ dataset, etc)
+   * **3) the final RTD**
 4. Folder containing the intermediary files of the analysis (*GTF* files of accepted models at each QC-step, transcripts quantification files, etc)
 5. Folder containing the rejected models at each quality control step (*GTF* format)
 

@@ -28,6 +28,8 @@ description = \
 parser = ArgumentParser(description=description, formatter_class=RawTextHelpFormatter,
                         add_help=False)
 
+# Input files
+
 parser.add_argument('--assemblies',
                     dest="ass_dir",
                     action="store", default=None,
@@ -38,7 +40,7 @@ parser.add_argument('--references',
                     action="store", default=None,
                     help="Path of the folder containing reference annotations (GTF format) to be integrated into the RTD.")
 
-###
+# Args related to SJ QC
 
 parser.add_argument('--SJ-data',
                     dest="sj_dir",
@@ -51,7 +53,7 @@ parser.add_argument("--SJ-reads",
                     help="Minimum number of uniquely-map reads (X) observed in a minimum number of samples (Y) to consider "
                          "a splice-junction (SJ) supported. Default: 2 1 (2 uniquely-map reads in at least 1 sample).")
 
-###
+# Args related to Abundance QC
 
 parser.add_argument('--genome',
                     dest="genome_fl",
@@ -70,7 +72,7 @@ parser.add_argument("--tpm",
                     help="Minimum TPM abundance (N), observed in a minimum number of samples (M), to consider a transcript "
                          "as supported by quantification. Default: 1 1 (1 TPM in at least 1 sample).")
 
-###
+# Args related to fragment QC
 
 parser.add_argument("--fragment-len",
                     dest="len_th",
@@ -85,15 +87,21 @@ parser.add_argument("--antisense-len",
                          "is in the opposite strand and the length is less than this percentage of the gene length. "
                          "Value must be within 0 and 1. Default: 0.5")
 
-###
+# Args related to "special case" models
 
 parser.add_argument("--add",
                     dest="add_set", nargs='*',
-                    default=['None'], choices=['unstranded', 'intronic', 'None'],
-                    help="Potentially non-coding transcripts to include into the annotation. "
-                         "Options: 'unstranded', 'intronic'. Default: exclude them.")
+                    default=['None'], choices=['unstranded', 'intronic', 'overextended', 'uniform', 'None'],
+                    help="Additional categories of transcripts to include into the annotation. "
+                         "Options: 'unstranded', 'intronic', 'overextended', 'uniform'. Default: exclude them.")
 
-###
+parser.add_argument("--disable",
+                    dest="disable_set", nargs='*',
+                    default=['None'], choices=['redundant', 'chimeric', 'None'],
+                    help="(Optional) Quality-Control steps  to disable during the analysis. "
+                         "Options: 'redundant', 'chimeric'. Default: enable them.")
+
+# Args related to temporary and additional output files
 
 parser.add_argument("--ram",
                     dest="size_th",
@@ -103,11 +111,18 @@ parser.add_argument("--ram",
 
 parser.add_argument("--keep",
                     dest="keep_set", nargs='*',
-                    default=['None'], choices=['intermediary', 'removed', 'None'],
+                    default=['None'], choices=['intermediary', 'removed', 'exploratory', 'None'],
                     help="Intermediary files to keep during the analysis. "
-                         "Options: 'intermediary', 'removed'. Default: Remove them.")
+                         "Options: 'intermediary', 'removed', 'exploratory'. Default: remove them.")
 
-###
+parser.add_argument('--overwrite',
+                    dest="overwrite",
+                    action="store_true",
+                    default=False,
+                    help="If provided, the program will delete the output folder and all its content to perform the "
+                         "analysis from scratch. Default: False.")
+
+# Args related to output files
 
 parser.add_argument('--outpath',
                     dest="outpath", default=None,
@@ -135,7 +150,7 @@ def main():
     args = check_input(args)
 
     # Create project folder and subfolder structure
-    paths_dt = create_project_dir(args.outpath)
+    paths_dt = create_project_dir(args.outpath, args.outname, args.overwrite, force=False)
 
     # Create logfile to track the analysis
     time_stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -158,7 +173,7 @@ def main():
                   args.sj_dir, args.sjreads_th,                     # SJ-QC related args
                   args.genome_fl, args.fastq_dir, args.abund_th,    # Abundance-QC related args
                   args.len_th, args.antlen_th,                      # Structure-QC related args
-                  args.skip_set, args.add_set,                      # Category-selection related args
+                  args.skip_set, args.add_set, args.disable_set,    # Category-selection related args
                   args.size_th, args.keep_set,                      # Memory-related arguments
                   paths_dt, args.prefix, args.outname, logfile)     # Output related args
 

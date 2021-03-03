@@ -211,8 +211,7 @@ def group_transcripts_by_consensus(gtf_obj, overlap_group):
         trans_A_first_exon, trans_A_last_exon = trans_A_model[0], trans_A_model[-1]
         trans_B_first_exon, trans_B_last_exon = trans_B_model[0], trans_B_model[-1]
 
-        if get_overlap_percentage(trans_A_first_exon, trans_B_first_exon) \
-                and get_overlap_percentage(trans_A_last_exon, trans_B_last_exon):
+        if get_overlap_percentage(trans_A_first_exon, trans_B_first_exon) and get_overlap_percentage(trans_A_last_exon, trans_B_last_exon):
             consensus_groups_dt[trans_A].update([trans_A, trans_B])
             consensus_groups_dt[trans_B].update([trans_A, trans_B])
         else:

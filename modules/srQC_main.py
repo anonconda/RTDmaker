@@ -60,14 +60,14 @@ def remove_redundant_intermediary_files(dir_path, exceptions):
 
 
 def main(ass_dir, ref_dir, sj_dir, sjreads_th, genome_fl, fastq_dir, abund_th,
-         fragment_len, antisense_len, skip_set, add_set, size_th, keep_set, paths_dt, prefix, outname, logfile):
+         fragment_len, antisense_len, skip_set, add_set, disable_set, size_th, keep_set, paths_dt, prefix, outname, logfile):
 
     # Arguments order and grouping:
     # srQC.main(args.ass_dir, args.ref_dir,                       # Annotations to analyze
     #           args.sj_dir, args.sjreads_th,                     # SJ-QC related args
     #           args.genome_fl, args.fastq_dir, args.abund_th,    # Abundance-QC related args
     #           args.len_th, args.antlen_th,                      # Structure-QC related args
-    #           args.skip_set, args.add_set,                      # Category-selection related args
+    #           args.skip_set, args.add_set, args.disable_set     # Category-selection related args
     #           args.size_th, args.keep_set,                      # Memory-related arguments
     #           paths_dt, args.prefix, args.outname, logfile)     # Output related args
 
@@ -76,6 +76,13 @@ def main(ass_dir, ref_dir, sj_dir, sjreads_th, genome_fl, fastq_dir, abund_th,
 
     # Whether to print additional logging information or not
     verb = False
+
+    # Allow to disable Intron-based redundancy and chimeric check to better fit the processing of GTF containing PacBio data
+    dis_redundant, dis_chimeric = False, False
+    if 'redundant' in disable_set:
+        dis_redundant = True
+    if 'chimeric' in disable_set:
+        dis_chimeric = True
 
     # Track intermediary files to optionally remove them at the end
     intermediary_files = set()
@@ -104,7 +111,8 @@ def main(ass_dir, ref_dir, sj_dir, sjreads_th, genome_fl, fastq_dir, abund_th,
     if ass_dir:
         # 1) Remove redundant transcripts
         # Redundancy removal already checks if file exist and avoid re-doing the analysis, no need to use file_exist()
-        nonredundant_gtf = remove_redundant(gtf_files, paths_dt, f"{outname}_assemblies", size_th, to_keep=keep_set)
+        nonredundant_gtf = remove_redundant(gtf_files, paths_dt, f"{outname}_assemblies", size_th,
+                                            to_keep=keep_set, disable=dis_redundant)
         is_empty(nonredundant_gtf)
         intermediary_files.add(nonredundant_gtf)
 
@@ -221,7 +229,8 @@ def main(ass_dir, ref_dir, sj_dir, sjreads_th, genome_fl, fastq_dir, abund_th,
         # The variable name also must be different, thus the 'ref_' prefix
 
         # Redundancy removal already checks if the file exist and avoid re-doing the analysis, no need to use file_exist
-        ref_nonredundant_gtf = remove_redundant(merge_files, paths_dt, f"{outname}_references", size_th, to_keep=keep_set)
+        ref_nonredundant_gtf = remove_redundant(merge_files, paths_dt, f"{outname}_references", size_th,
+                                                to_keep=keep_set, disable=dis_redundant)
 
         is_empty(ref_nonredundant_gtf)
         intermediary_files.add(ref_nonredundant_gtf)
@@ -249,7 +258,7 @@ def main(ass_dir, ref_dir, sj_dir, sjreads_th, genome_fl, fastq_dir, abund_th,
     refined_gtf = os.path.join(paths_dt["inter"], f"{outname}_to_reannotate.gtf")
     if not file_exist(refined_gtf):
         refined_gtf = remove_chimeric_and_fragments(ref_valid_loc_gtf, fragment_len, paths_dt, outname, logfile,
-                                                         to_add=add_set, to_keep=keep_set)
+                                                         to_add=add_set, to_keep=keep_set, disable=dis_chimeric)
         is_empty(refined_gtf)
         intermediary_files.add(refined_gtf)
         print("\n", end="")
@@ -317,7 +326,7 @@ def main(ass_dir, ref_dir, sj_dir, sjreads_th, genome_fl, fastq_dir, abund_th,
         row = f"{fl_cond}\t{fl_name}\t{trans_n}\n"
         global_track_rows.append(row)
 
-    global_track_file = os.path.join(paths_dt['report'], f"{outname}_pipeline_QC_steps_numbers.tsv")
+    global_track_file = os.path.join(paths_dt['report'], f"{outname}_numbers_pipeline_QC_steps.tsv")
     simple_write_table(global_track_rows, f"{global_track_file}")
 
     mapping_table = generate_mapping_table(rtd_gtf, paths_dt, outname)

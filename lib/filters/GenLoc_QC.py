@@ -297,8 +297,8 @@ def remove_ambiguous_location_models(gtf_file, paths_dt, outname, to_add=None, t
 
     outfile = write_gtf(gtf_obj, to_accept, paths_dt['inter'], f"{outname}_valid_loc.gtf")
 
-    if 'additional' in to_keep:
-        _ = write_gtf(gtf_obj, monoexonic_antisense, paths_dt['inter'], f"{outname}_antisense_monoexonic.gtf")
+    if 'exploratory' in to_keep:
+        _ = write_gtf(gtf_obj, monoexonic_antisense, paths_dt['exploratory'], f"{outname}_antisense_monoexonic.gtf")
 
     if 'removed' in to_keep:
         if monoexonic_antisense:

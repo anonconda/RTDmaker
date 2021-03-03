@@ -3,13 +3,16 @@ import time
 import warnings
 from collections import defaultdict
 
-from lib.report.report_tools import percentiles_from_counts, simple_write_table, get_per, get_distribution_count
+from lib.filters.structural_QC import overlap_analysis
+from lib.filters.structural_QC import identify_groups_with_uniform_consensus, identify_non_overlapping_subgroups
 
-from lib.filters.structural_QC import group_transcripts_by_overlap, identify_intronic_transcripts
 from lib.filters.GenLoc_QC import identify_monoexonic_antisense, identify_antisense_fragments, get_longest_transcript
+from lib.filters.structural_QC import group_transcripts_by_overlap, identify_intronic_transcripts, group_transcripts_by_consensus
 
 from lib.tools.logger import logger
 from lib.parsing.gtf_object_tools import create_gtf_object
+
+from lib.report.report_tools import percentiles_from_counts, simple_write_table, get_per, get_distribution_count
 
 warnings.filterwarnings("ignore")
 
@@ -33,6 +36,126 @@ def generate_annotation_report(gtf_file, outpath, outname, logfile):
     print(time.asctime(), f"Report tables location: {report_folder}", flush=True)
 
 
+def report_chimeric(gtf_obj, outpath, outname):
+
+    print(time.asctime(), f"Identifying chimeric transcripts", flush=True)
+    # All transcripts in the annotation
+    all_set = set(gtf_obj.trans_exons_dt.keys())
+
+    # print(time.asctime(), f"Classifying transcripts into groups according to their exonic boundaries", flush=True)
+    # Identifying regions with a single consensus groups
+    uniform_consensus = identify_groups_with_uniform_consensus(gtf_obj)
+
+    # Identify groups where there are multiple subgroups of non-overlapping boundary-consensus groups
+    contain_subgroups = all_set - uniform_consensus
+    contain_overlaps, no_overlaps = identify_non_overlapping_subgroups(gtf_obj, contain_subgroups)
+
+    # print(time.asctime(), f"Identifying overlapping transcripts", flush=True)
+    # Identify overlapping transcripts to allow for an accurate identification of fragmentary transcripts
+    potential_accepted, potential_overlap, potential_segment = overlap_analysis(gtf_obj, contain_overlaps)
+
+    # Generate rows for table
+    # First relate chimeric trans with their genes
+    potential_chimeric = potential_accepted | potential_overlap
+
+    # Chimeric genes/transcripts
+    chimeric_genes_dt = defaultdict(set)
+    for t_id in potential_chimeric:
+        g_id = gtf_obj.trans_gene_dt[t_id]
+        chimeric_genes_dt[g_id].add(t_id)
+
+    chimeric_table_rows = ["Gene ID\tChimeric transcripts\n"]
+    for g_id, g_trans in sorted(chimeric_genes_dt.items(), key=lambda kv: len(kv[1]), reverse=True):
+        trans_str = ";".join(sorted(g_trans))
+        row = f"{g_id}\t{trans_str}\n"
+        chimeric_table_rows.append(row)
+
+    # Split genes/transcripts
+    split_genes_dt = defaultdict(set)
+    for t_id in potential_segment:
+        g_id = gtf_obj.trans_gene_dt[t_id]
+        split_genes_dt[g_id].add(t_id)
+
+    split_table_rows = ["Gene ID\tSplit Transcripts\n"]
+    for g_id, g_trans in sorted(split_genes_dt.items(), key=lambda kv: len(kv[1]), reverse=True):
+        trans_str = ";".join(sorted(g_trans))
+        row = f"{g_id}\t{trans_str}\n"
+        split_table_rows.append(row)
+
+    # Write tables
+    table_data = [("chimeric", chimeric_table_rows), ("split", split_table_rows)]
+    for cat_tag, cat_rows in table_data:
+        outfile = os.path.join(outpath, f"{outname}_potentially_{cat_tag}_genes.tsv")
+        simple_write_table(cat_rows, outfile)
+
+
+def report_not_uniform_groups(gtf_obj, outpath, outname, to_ignore=None, ratio_th=0.7):
+
+    not_uniform_transcripts = set()
+
+    print(time.asctime(), f"Identifying genes potentially containing fragments", flush=True)
+    # All transcripts in the annotation
+    all_set = set(gtf_obj.trans_exons_dt.keys())
+
+    if not to_ignore:
+        to_ignore = set()
+
+    all_set = all_set - to_ignore
+
+    # print(time.asctime(), f"Classifying transcripts into groups according to their exonic boundaries", flush=True)
+    # Identifying regions with a single consensus groups
+    uniform_consensus = identify_groups_with_uniform_consensus(gtf_obj)
+
+    # Identify groups where there are multiple subgroups
+    contain_subgroups = all_set - uniform_consensus
+
+    # contain_overlaps, no_overlaps = identify_non_overlapping_subgroups
+    flat = lambda l: [e for sub in l for e in sub]
+
+    for chrom, strand_transcripts in gtf_obj.chrom_trans_dt.items():
+
+        # Transcripts to analyze
+        strand_transcripts = [t_id for t_id in strand_transcripts if t_id in contain_subgroups]
+
+        # Remove mono-exonic transcripts from the analysis to avoid noise (due to intronic, redundant monoexons, etc)
+        strand_transcripts = [t_id for t_id in strand_transcripts if len(gtf_obj.trans_exons_dt[t_id]) > 1]
+
+        # Group transcripts by their overlap
+        overlapping_transcripts = group_transcripts_by_overlap(gtf_obj, strand_transcripts)
+
+        # Group transcripts by their boundary consensus (if their first/last exon overlap)
+        for overlap_group in overlapping_transcripts:
+            consensus_groups = group_transcripts_by_consensus(gtf_obj, overlap_group)
+
+            n_groups = len(consensus_groups)
+
+            group_trans = flat(consensus_groups)
+            n_trans = len(group_trans)
+
+            group_to_trans_ratio = n_groups / n_trans
+
+            # This ratio is high if most transcripts in the group are in their own boundary-consensus subgroup
+            if group_to_trans_ratio >= ratio_th:
+                # Ignore groups with less than 3 isoforms (no sense reporting genes with only 2 isoforms with diff ends)
+                if n_trans > 2:
+                    not_uniform_transcripts.update(group_trans)
+
+    # Chimeric genes/transcripts
+    genes_trans_dt = defaultdict(set)
+    for t_id in not_uniform_transcripts:
+        g_id = gtf_obj.trans_gene_dt[t_id]
+        genes_trans_dt[g_id].add(t_id)
+
+    not_uniform_table_rows = ["Gene ID\tTranscripts IDs\n"]
+    for g_id, g_trans in sorted(genes_trans_dt.items(), key=lambda kv: len(kv[1]), reverse=True):
+        trans_str = ";".join(sorted(g_trans))
+        row = f"{g_id}\t{trans_str}\n"
+        not_uniform_table_rows.append(row)
+
+    not_uniform_table = os.path.join(outpath, f"{outname}_potentially_fragmented_genes.tsv")
+    simple_write_table(not_uniform_table_rows, not_uniform_table)
+
+
 def gtf_exploration(gtf_obj, outpath, outname):
 
     # Calculating Nº of Scaffolds/Genes/Transcripts
@@ -44,8 +167,6 @@ def gtf_exploration(gtf_obj, outpath, outname):
     n_trans = len(gtf_obj.trans_exons_dt)
     p_genes = get_per(n_genes, n_genes)
     p_trans = get_per(n_trans, n_trans)
-
-
 
     # 1) Scaffold table
     header = "Scaffold\tNº of Genes\tGenes %\tNº of Transcripts\tTranscripts %\n"
@@ -90,7 +211,7 @@ def gtf_exploration(gtf_obj, outpath, outname):
         scaffold_rows.append(row)
 
     # Write table
-    simple_write_table(scaffold_rows, f"{outfile}_scaffolds_numbers.tsv")
+    simple_write_table(scaffold_rows, f"{outfile}_numbers_scaffolds.tsv")
 
     # 2) Gene category table
     gene_categories_rows = []
@@ -138,23 +259,11 @@ def gtf_exploration(gtf_obj, outpath, outname):
         gene_categories_rows.append(f"{cat_name}\t{n_cat_genes}\t{p_cat_genes}\t{n_cat_trans}\t{p_cat_trans}\n")
 
     # Write table
-    simple_write_table(gene_categories_rows, f"{outfile}_gene_categories_numbers.tsv")
+    simple_write_table(gene_categories_rows, f"{outfile}_numbers_gene_categories.tsv")
 
     # 2.5) Find additional gene categories of interest
 
     other_categories_data = []
-
-    # Identify Monoexonic Antisense Genes
-    # Set length value to 100% so it identifies all antisense transcripts
-    antisense = identify_monoexonic_antisense(gtf_obj)
-    antisense_trans, _, _, _ = identify_antisense_fragments(gtf_obj, to_analyze=antisense, len_th=1.0)
-
-    antisense_genes = set()
-    for t_id in antisense_trans:
-        g_id = gtf_obj.trans_gene_dt[t_id]
-        antisense_genes.add(g_id)
-
-    other_categories_data.append(("Monoexonic Antisense", antisense_genes, antisense_trans))
 
     # Unstranded genes
     unstranded_trans = set()
@@ -189,6 +298,18 @@ def gtf_exploration(gtf_obj, outpath, outname):
     other_categories_data.append(("Intronic", intronic_genes, intronic_trans))
     other_categories_data.append(("Monoexonic Redundant", red_mono_genes, red_mono_trans))
 
+    # Identify Monoexonic Antisense Genes
+    # Set length value to 100% so it identifies all antisense transcripts
+    antisense = identify_monoexonic_antisense(gtf_obj)
+    antisense_trans, _, _, _ = identify_antisense_fragments(gtf_obj, to_analyze=antisense, len_th=1.0)
+
+    antisense_genes = set()
+    for t_id in antisense_trans:
+        g_id = gtf_obj.trans_gene_dt[t_id]
+        antisense_genes.add(g_id)
+
+    other_categories_data.append(("Monoexonic Antisense", antisense_genes, antisense_trans))
+
     header = "Category\tNº of Genes\tGenes %\tNº of Transcripts\tTranscripts %\n"
     other_categories_rows = [header]
     for cat_name, cat_genes, cat_trans in other_categories_data:
@@ -202,7 +323,7 @@ def gtf_exploration(gtf_obj, outpath, outname):
         other_categories_rows.append(f"{cat_name}\t{n_cat_genes}\t{p_cat_genes}\t{n_cat_trans}\t{p_cat_trans}\n")
 
     # Write table
-    simple_write_table(other_categories_rows, f"{outfile}_other_categories_numbers.tsv")
+    simple_write_table(other_categories_rows, f"{outfile}_numbers_other_categories.tsv")
 
     # Write Transcript IDs of other categories into a table
     for cat_name, cat_genes, cat_trans in other_categories_data:
@@ -212,7 +333,7 @@ def gtf_exploration(gtf_obj, outpath, outname):
             temp_rows.append(f"{t_id}\n")
 
         if temp_rows:
-            simple_write_table(temp_rows, f"{outfile}_other_categories_IDs_{table_name}.tsv")
+            simple_write_table(temp_rows, f"{outfile}_IDs_other_categories_{table_name}.tsv")
 
     # 3) Number of Isoforms table
     iso_table_rows = []
@@ -243,11 +364,16 @@ def gtf_exploration(gtf_obj, outpath, outname):
             iso_id_rows.append(id_row)
 
     # Write tables
-    simple_write_table(iso_table_rows, f"{outfile}_isoform_table_numbers.tsv")
-    simple_write_table(iso_id_rows, f"{outfile}_isoform_table_ids.tsv")
+    simple_write_table(iso_table_rows, f"{outfile}_numbers_isoforms.tsv")
+    simple_write_table(iso_id_rows, f"{outfile}_IDs_isoforms.tsv")
+
+    # 3.5) Report potential chimeric present in the annotation
+    report_chimeric(gtf_obj, outpath, outname)
+
+    # 3.75) Report genes and transcripts with large number of BC subgroups (may indicate fragmentation)
+    report_not_uniform_groups(gtf_obj, outpath, outname, to_ignore=intronic_trans | red_mono_trans)
 
     # 4) Lengths tables
-
     # Dict for the lengths counts to use a more memory efficient approach to generate percentiles
     trans_len_count, exons_len_count, introns_len_count, cds_len_count, monoexon_len_count = [{} for _ in range(5)]
 
@@ -416,6 +542,6 @@ def gtf_exploration(gtf_obj, outpath, outname):
             row = f"{t_chr}\t{t_id}\t" + ",".join(t_sj_lst) + "\n"
             trans_sj_rows.append(row)
 
-    simple_write_table(sorted(trans_sj_rows), f"{outfile}_SJ_IDs.tsv")
+    simple_write_table(sorted(trans_sj_rows), f"{outfile}_IDs_splice_junction.tsv")
 
     return outpath

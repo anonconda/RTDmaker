@@ -8,6 +8,23 @@ from lib.tools.job_launcher import launch_jobs
 from lib.parsing.dir_parsing_tools import generate_fastq_table
 
 
+def add_quotes(paths):
+
+    res = []
+    quote_marks = {'\'', '"'}
+    for f_path in paths:
+        # If there is a white space and no quote marks, add them
+        if ' ' in f_path:
+            if f_path[0] in quote_marks and f_path[-1] in quote_marks:
+                res.append(f_path)
+            else:
+                res.append(f'"{f_path}"')
+        else:
+            res.append(f_path)
+
+    return res
+
+
 def generate_annotation_fasta(gtf, genome, outdir, programs):
 
     if not genome:
@@ -19,8 +36,10 @@ def generate_annotation_fasta(gtf, genome, outdir, programs):
     gtf_outname = os.path.basename(gtf).replace(".gtf", "")
 
     t_fasta = os.path.join(outdir, f"{gtf_outname}.fa")
-    gffread_exe = programs["gffread"]
 
+    t_fasta, genome, gtf = add_quotes([t_fasta, genome, gtf])
+
+    gffread_exe = programs["gffread"]
     command = f"{gffread_exe} -w {t_fasta} -g {genome} {gtf}"
 
     print(time.asctime(), "GffRead command:")
@@ -33,7 +52,7 @@ def generate_annotation_fasta(gtf, genome, outdir, programs):
     return t_fasta
 
 
-def generate_salmon_index(trans_fasta, outdir, programs):
+def generate_salmon_index(t_fasta, outdir, programs):
 
     print(time.asctime(), f"Generating Salmon index file")
 
@@ -48,8 +67,10 @@ def generate_salmon_index(trans_fasta, outdir, programs):
     index_type = "quasi"  # Recommended in older versions
     index_type = "puff"   # Only option in latest version
 
+    t_fasta, t_index = add_quotes([t_fasta, t_index])
+
     salmon_exe = programs["salmon"]
-    command = f"{salmon_exe} index -t {trans_fasta} -i {t_index} --type {index_type} --keepDuplicates"
+    command = f"{salmon_exe} index -t {t_fasta} -i {t_index} --type {index_type} --keepDuplicates"
 
     print(time.asctime(), f"Salmon index creation command:")
     print(command + "\n")
@@ -61,7 +82,7 @@ def generate_salmon_index(trans_fasta, outdir, programs):
     return t_index
 
 
-def generate_salmon_commands(fastq_table, trans_index, outdir, programs, paired=True, n_threads=2):
+def generate_salmon_commands(fastq_table, t_index, outdir, programs, paired=True, n_threads=2):
 
     print("\n")
     print(time.asctime(), f"Generating Salmon quantification commands")
@@ -76,20 +97,24 @@ def generate_salmon_commands(fastq_table, trans_index, outdir, programs, paired=
     with open(fastq_table) as fh:
         # Skip header
         next(fh)
-        for row in fh:
+        for i, row in enumerate(fh, 1):
             fl_1, fl_2 = row.strip("\n").split(",")
 
             if not fl_2:
                 sys.exit(f'ERROR: The current version if only able to handle paired-end data.')
 
-            # Use the name of file 1 as the outname for the analysis
-            outname = os.path.splitext(os.path.basename(fl_1))[0]
+            # Make the name of the outfiles unique
+            filename = os.path.splitext(os.path.basename(fl_1))[0]
+            dirname = os.path.basename(os.path.dirname(fl_1))
+            outname = f"{i:03}_{dirname}_{filename}"
             outfile = os.path.join(outdir, outname)
 
             # This tell Salmon to automatically detect the library type
             lib_type = "A"
 
-            command = f"{salmon_exe} quant -i {trans_index} -l {lib_type} -1 {fl_1} -2 {fl_2} -o {outfile} --useVBOpt --seqBias --threads {n_threads}"
+            t_index, outfile, fl_1, fl_2 = add_quotes([t_index, outfile, fl_1, fl_2])
+
+            command = f"{salmon_exe} quant -i {t_index} -l {lib_type} -1 {fl_1} -2 {fl_2} -o {outfile} --useVBOpt --seqBias --threads {n_threads}"
 
             commands_list.append(command)
 

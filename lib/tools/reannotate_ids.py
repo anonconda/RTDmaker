@@ -140,7 +140,7 @@ def generate_reannotated_gtf(gtf_file, prefix, paths_dt, outname, logfile):
 
 def generate_mapping_table(gtf_file, paths_dt, outname):
 
-    print(time.asctime(), f"Generating gene / transcripts mapping table", flush=True)
+    print(time.asctime(), f"Generating genes to transcripts mapping table", flush=True)
 
     gtf_obj = create_gtf_object(gtf_file)
 

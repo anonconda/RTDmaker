@@ -88,7 +88,7 @@ def find_utr_regions(trans_id, trans_sense, trans_exons, trans_cds):
         stop_codon = (stop, stop + 2)
 
     else:
-        print(f'Transcript "{trans_id}" does not present a valid strand ("{trans_sense}")')
+        print(f'Transcript "{trans_id}" does not present a valid strand "{trans_sense}"')
         return [], [], (), ()
 
     # TODO, answer these questions:
@@ -126,7 +126,8 @@ def get_id(gtf_line, tag):
 
     res_id = splitted[1].split(end_tag)[0]
 
-    # TODO quick fix of bug where " character remains at the end of transcript_ids after RTD re-annotation step
+    # Quick fix of bug where " character remains at the end of transcript_ids after RTD re-annotation step
+    # TODO find source of this bug
     res_id = res_id.replace('"', '')
 
     return res_id

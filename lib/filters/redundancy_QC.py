@@ -6,10 +6,10 @@ from collections import defaultdict
 from itertools import islice, permutations
 
 from lib.tools.logger import sizeof_fmt
-from lib.report.report_tools import global_track_dt
 from lib.tools.other_tools import get_transcript_length
 from lib.parsing.gtf_object_tools import create_gtf_object, add_tag, write_gtf
 from lib.tools.other_tools import sort_by_length, group_transcripts_by_overlap, get_start_end
+from lib.report.report_tools import global_track_dt
 
 
 def divide_by_size(files, size_th):
@@ -40,7 +40,7 @@ def divide_by_size(files, size_th):
         yield chunk
 
 
-def process_batch(gtf_files, paths_dt, outname):
+def process_batch(gtf_files, paths_dt, outname, to_keep):
 
     verb = False
     if verb:
@@ -49,16 +49,16 @@ def process_batch(gtf_files, paths_dt, outname):
             print(time.asctime(), f"{gtf_file}")
         print("\n")
 
-    nonredundant_gtf = remove_redundant(gtf_files, paths_dt, outname)
+    nonredundant_gtf = remove_redundant(gtf_files, paths_dt, outname, to_keep=to_keep)
 
     return nonredundant_gtf
 
 
-def split_redundancy_removal(gtf_files, paths_dt, outname, size_th):
+def split_redundancy_removal(gtf_files, paths_dt, outname, size_th, to_keep):
 
     # If number of files to be processed is only 1, it wouldn't enter the "while" loop, thus this check to process it
     if len(gtf_files) == 1:
-        outfile = process_batch(gtf_files, paths_dt, outname)
+        outfile = process_batch(gtf_files, paths_dt, outname, to_keep)
         return outfile
 
     i = 1
@@ -88,7 +88,7 @@ def split_redundancy_removal(gtf_files, paths_dt, outname, size_th):
 
             print(time.asctime(), f"Processing batch {n} of {len(files_batches)}", flush=True)
             # Meld files and remove redundant transcripts
-            batch_outfile = process_batch(batch, paths_dt, outname)
+            batch_outfile = process_batch(batch, paths_dt, outname, to_keep)
 
             # Track files to remove them later
             generated_files.append(batch_outfile)
@@ -114,6 +114,11 @@ def split_redundancy_removal(gtf_files, paths_dt, outname, size_th):
 
 
 def fuse_gtf(gtf_files, outpath, outname):
+
+    # If there is only one GTF file, there is no need to create an union file
+    if len(gtf_files) == 1:
+        # gtf_files format: [(gtf_file_path, gtf_tag_str)]
+        return gtf_files[0][0]
 
     outfile = os.path.join(outpath, f"{outname}_temporary_union.gtf")
 
@@ -141,7 +146,7 @@ def fuse_gtf(gtf_files, outpath, outname):
         # Not using the "write_gtf" method because:
         # 1) the sorting (present in write_gtf) would unnecessarily slow the analysis
         # 2) this code contains the "add_tag" method necessary to make each line unique
-        # 3) yet the "add_tag" method is unnecessary for write_gtf
+        # 3) the "add_tag" method is unnecessary for write_gtf
         with open(outfile, "a+") as fh:
             for trans, lines_ix_list in gtf_obj.trans_gtf_lines_index.items():
                 for ix in lines_ix_list:
@@ -295,13 +300,16 @@ def identify_subset_redundant(gtf_obj, to_keep=None):
     return redundant_subset
 
 
-def remove_redundant(gtf_files, paths_dt, outname, size_th=None, verb=True, to_keep=None):
+def remove_redundant(gtf_files, paths_dt, outname, size_th=None, verb=True, to_keep=None, disable=False):
 
     # Important! The "split_analysis" predict this outfile to avoid running pre-calculated analysis
     # If you change the format here, you must also change it on the "split_analysis" method
 
     if not to_keep:
-        to_keep = set('intermediary')
+        to_keep = set()
+
+    # This function requires the 'intermediary' files to do its analysis, this are removed later on srQC_main
+    to_keep.add('intermediary')
 
     accepted_outname = f"{outname}_non_redundant.gtf"
 
@@ -324,11 +332,11 @@ def remove_redundant(gtf_files, paths_dt, outname, size_th=None, verb=True, to_k
     if verb:
         print(time.asctime(), f"Removing redundant transcripts")
         for (gtf_fl, gtf_tag) in gtf_files:
-            # Disabling this print to make logfile more concise
+            # Print names into logfile (disabled)
             pass
 
     if size_th:
-        nonredundant_gtf = split_redundancy_removal(gtf_files, paths_dt, outname, size_th)
+        nonredundant_gtf = split_redundancy_removal(gtf_files, paths_dt, outname, size_th, to_keep)
         return nonredundant_gtf
 
     # Put all transcripts models into a single file, this function also make the IDs unique for each file
@@ -353,7 +361,12 @@ def remove_redundant(gtf_files, paths_dt, outname, size_th=None, verb=True, to_k
     # Important: Re-introduce the non-redundant mono-exons into the non-redundant output file!
     nonredundant_trans = nonredundant_trans | nonredundant_monoexons
 
-    # Redundant transcripts
+    # Optionally keep or remove redundant transcripts by intron-coordinates, i.e. when analyzing data with PacBio data
+    if disable:
+        nonredundant_trans.update(redundant_trans | redundant_by_subset)
+        redundant_trans, redundant_by_subset = set(), set()
+
+    # Redundant transcript
     tot_redundants = redundant_trans | redundant_by_subset | redundant_monoexons
 
     outfile = write_gtf(gtf_obj, nonredundant_trans, paths_dt['inter'], accepted_outname)

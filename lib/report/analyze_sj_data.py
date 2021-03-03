@@ -136,7 +136,7 @@ def generate_sj_report(sj_dir, outpath, outname):
         sj_rows.append(row)
 
     # Write SJ-ID - Reads table
-    simple_write_table(sj_rows, f"{outfile}_SJ_reads_numbers.tsv")
+    simple_write_table(sj_rows, f"{outfile}_numbers_splice_junction_reads.tsv")
 
     # Write SJ per-file percentile distribution table
     perc = [0, 1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 99, 100]

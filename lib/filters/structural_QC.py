@@ -231,9 +231,49 @@ def identify_overlapping_transcripts(gtf_obj, overlap_group):
     return accepted_overlapping, rejected_overlapping, rejected_segmented
 
 
+def identify_uniform_fragments_groups(gtf_obj, potential_fragments, potential_accepted, min_trans=3):
+
+    uniform_fragments = set()
+
+    n_accepted_group = len(potential_accepted)
+
+    fragment_consensus_groups = group_transcripts_by_consensus(gtf_obj, potential_fragments)
+
+    # Recover "fragmentary" subgroups of transcripts if they have consistent start/end and are numerous
+    for subgroup in fragment_consensus_groups:
+        n_subgroup = len(subgroup)
+        if n_subgroup > min_trans and n_subgroup > n_accepted_group:
+            uniform_fragments.update(subgroup)
+
+    return uniform_fragments
+
+
+def identify_overextended_transcripts(gtf_obj, potential_accepted, uniform_fragments, n_trans_th=3):
+
+    overextended, not_overextended = [set() for _ in range(2)]
+
+    n_uniform_trans = len(uniform_fragments)
+
+    fragment_consensus_groups = group_transcripts_by_consensus(gtf_obj, potential_accepted)
+
+    # If the "accepted" transcripts are few and there is a more numerous uniform group, tag them as overextended
+    for subgroup in fragment_consensus_groups:
+        n_subgroup = len(subgroup)
+
+        # There has to be an alternative numerous uniform group
+        if n_uniform_trans > n_trans_th:
+            # The overextended group has to represent a small part of the transcripts in the group
+            if n_subgroup < n_trans_th and n_subgroup < n_uniform_trans:
+                overextended.update(subgroup)
+
+    not_overextended = potential_accepted - overextended
+
+    return overextended, not_overextended
+
+
 def identify_fragmentary_transcripts(gtf_obj, overlap_group, len_th):
 
-    fragments, overextended = [set() for _ in range(2)]
+    fragments, overextended, uniform_fragments = [set() for _ in range(3)]
 
     # Identify and recover intronic transcripts to avoid classifying them as fragments
     intronic = identify_intronic_transcripts(gtf_obj, overlap_group)
@@ -250,53 +290,57 @@ def identify_fragmentary_transcripts(gtf_obj, overlap_group, len_th):
         else:
             potential_fragments.add(trans_id)
 
-    # Check for overextended transcripts. Overextend transcrips is defined by:
-    # a) the accepted transcript is only 1,
-    # b) and there is at least 1 consensus subgroup with multiple transcripts
-    fragment_consensus_groups = group_transcripts_by_consensus(gtf_obj, potential_fragments)
-    if len(potential_accepted) == 1:
-        for fragment_subgroup in fragment_consensus_groups:
-            if len(fragment_subgroup) >= len(potential_accepted) * 2:
-                overextended.update(potential_accepted)
+    # Identify groups of transcripts that are short but that are numerous and have a consistent structure
+    uniform_fragments = identify_uniform_fragments_groups(gtf_obj, potential_fragments, potential_accepted)
+
+    # Identify long transcripts that represent a small number in the region
+    overextended, not_overextended = identify_overextended_transcripts(gtf_obj, potential_accepted, uniform_fragments)
+
+    # # Check for overextended transcripts. Overextend transcripts is defined by:
+    # # a) the accepted transcript is only 1,
+    # # b) and there is at least 1 consensus subgroup with multiple transcripts
+    # fragment_consensus_groups = group_transcripts_by_consensus(gtf_obj, potential_fragments)
+    # if len(potential_accepted) == 1:
+    #     for fragment_subgroup in fragment_consensus_groups:
+    #         if len(fragment_subgroup) >= len(potential_accepted) * 2:
+    #             overextended.update(potential_accepted)
 
     if not overextended:
         fragments.update(potential_fragments)
-        fragments = fragments - intronic
-        return fragments, overextended
+        fragments = fragments - intronic - uniform_fragments - overextended - not_overextended
+        return fragments, overextended, uniform_fragments
 
-    # If there is an overextended transcript, perform a new length check without the overextended transcript
-    subgroup = [t_id for t_id in overlap_group if t_id not in overextended]
+    # If there are overextended transcripts, perform a new length check without these models
+    else:
+        subgroup = [t_id for t_id in overlap_group if t_id not in overextended]
+        subgroup_longest_len = get_longest_length(gtf_obj, subgroup)
 
-    # Re-initialize the fragment group
-    fragments = set()
+        # Re-initialize the fragment group
+        fragments = set()
 
-    # Keep the longest overlapping group, flag other shorter non-overlapping subgroups as fragments
-    # Beware! The sorted(reverse=True) is giving incorrect results, do NOT use it!
-    # Why is this happening? Because ¯\_(ツ)_/¯
-    sorted_subgroups = sorted(group_transcripts_by_overlap(gtf_obj, subgroup),
-                              key=lambda group: get_longest_length(gtf_obj, group))
+        # Keep the longest overlapping group, flag other shorter non-overlapping subgroups as fragments
+        # Beware! The sorted(reverse=True) is giving incorrect results, do NOT use it!
+        # Why is this happening? Because ¯\_(ツ)_/¯
+        sorted_subgroups = sorted(group_transcripts_by_overlap(gtf_obj, subgroup),
+                                  key=lambda group: get_longest_length(gtf_obj, group))
 
-    selected_subgroup = sorted_subgroups[0]
-    fragments.update(flat(sorted_subgroups[:-1]))
+        selected_subgroup = sorted_subgroups[0]
+        fragments.update(flat(sorted_subgroups[:-1]))
 
-    ref_len = get_longest_length(gtf_obj, selected_subgroup)
-    for trans_id in selected_subgroup:
-        trans_len = get_transcript_length(gtf_obj, trans_id)
+        for trans_id in selected_subgroup:
+            trans_len = get_transcript_length(gtf_obj, trans_id)
 
-        # We don't want to re-introduce fragments that are overly short; perform final, more tolerant, length check
-        soft_len_th = 0.33
-        if (trans_len / longest_len) >= soft_len_th:
-            if (trans_len / ref_len) < len_th:
+            if (trans_len / subgroup_longest_len) >= len_th:
                 fragments.add(trans_id)
-        else:
-            fragments.add(trans_id)
+            else:
+                fragments.add(trans_id)
 
-    fragments = fragments - intronic
+    fragments = fragments - intronic - uniform_fragments - overextended - not_overextended
 
-    return fragments, overextended
+    return fragments, overextended, uniform_fragments
 
 
-def overlap_analysis(gtf_obj, to_analyze=None, write_table=False, verb=False):
+def overlap_analysis(gtf_obj, to_analyze=None, write_table=False, verb=False, disable=False):
 
     if verb:
         print(time.asctime(), "Identifying overlapping transcripts", flush=True)
@@ -335,12 +379,13 @@ def overlap_analysis(gtf_obj, to_analyze=None, write_table=False, verb=False):
     return global_accepted_overlapping, global_rejected_overlapping, global_rejected_segments
 
 
-def fragmentary_analysis(gtf_obj, to_analyze, len_th, verb=False):
+def fragmentary_analysis(gtf_obj, to_analyze, len_th):
 
+    verb = False
     if verb:
         print(time.asctime(), "Identifying fragmentary transcripts", flush=True)
 
-    global_fragments, global_overextended = [set() for _ in range(2)]
+    global_fragments, global_overextended, global_uniform_fragments = [set() for _ in range(3)]
     for chrom, strand_transcripts in gtf_obj.chrom_trans_dt.items():
 
         # Filter out transcripts to ignore when checking for fragments, Example:
@@ -353,15 +398,16 @@ def fragmentary_analysis(gtf_obj, to_analyze, len_th, verb=False):
         # Group transcripts by their boundary consensus (if their first/last exon overlap)
         for overlap_group in overlapping_transcripts:
 
-            fragments, overextended = identify_fragmentary_transcripts(gtf_obj, overlap_group, len_th)
+            fragments, overextended, uniform_fragments = identify_fragmentary_transcripts(gtf_obj, overlap_group, len_th)
 
             global_fragments = global_fragments | fragments
             global_overextended = global_overextended | overextended
+            global_uniform_fragments = global_uniform_fragments | uniform_fragments
 
-    return global_fragments, global_overextended
+    return global_fragments, global_overextended, global_uniform_fragments
 
 
-def remove_chimeric_and_fragments(gtf_file, len_th, paths_dt, outname, logfile, to_add=None, to_keep=None):
+def remove_chimeric_and_fragments(gtf_file, len_th, paths_dt, outname, logfile, to_add=None, to_keep=None, disable=False):
 
     logger(logfile)
 
@@ -396,25 +442,25 @@ def remove_chimeric_and_fragments(gtf_file, len_th, paths_dt, outname, logfile, 
     # Groups to ignore while checking for fragments,
     contain_fragments = all_set - potential_overlap
 
-    temp_fragments, overextended = fragmentary_analysis(gtf_obj, contain_fragments, len_th)
+    temp_fragments, overextended, uniform_fragments = fragmentary_analysis(gtf_obj, contain_fragments, len_th)
     fragments = fragments | temp_fragments
 
-    # It is possible to perform a 2nd analysis iteration
+    # This section allows to classify, as best as possible, the removed transcripts
     refine_models = True
     if refine_models:
         # If it contains subgroups, but no overlaps, check only for fragments
-        temp_fragments, _ = fragmentary_analysis(gtf_obj, no_overlaps, len_th)
+        temp_fragments, *_ = fragmentary_analysis(gtf_obj, no_overlaps, len_th)
         fragments = fragments | temp_fragments
 
         # Remove fragments from potentially accepted overlap groups
-        temp_fragments, _ = fragmentary_analysis(gtf_obj, potential_accepted, len_th)
+        temp_fragments, *_ = fragmentary_analysis(gtf_obj, potential_accepted, len_th)
         fragments = fragments | temp_fragments
 
         # Remove fragments from the potentially chimeric models, this make their visualization on IGB/IGV more clean
-        temp_fragments, _ = fragmentary_analysis(gtf_obj, potential_overlap, len_th)
+        temp_fragments, *_ = fragmentary_analysis(gtf_obj, potential_overlap, len_th)
         fragments = fragments | temp_fragments
 
-        temp_fragments, _ = fragmentary_analysis(gtf_obj, potential_segment, len_th)
+        temp_fragments, *_ = fragmentary_analysis(gtf_obj, potential_segment, len_th)
         fragments = fragments | temp_fragments
 
         # Finally, perform the overlap analysis to decide whether to keep or remove the overlapping transcripts
@@ -422,9 +468,9 @@ def remove_chimeric_and_fragments(gtf_file, len_th, paths_dt, outname, logfile, 
         selected_overlap, rejected_overlap, rejected_segment = overlap_analysis(gtf_obj, no_fragments)
 
         # Group the fragmentary transcripts together to annotate them into the same output file
-        to_check = all_set - (uniform_consensus | rejected_overlap | rejected_segment | fragments)
+        to_check_fragments = all_set - (uniform_consensus | rejected_overlap | rejected_segment | fragments)
 
-        temp_fragments, _ = fragmentary_analysis(gtf_obj, to_check, len_th)
+        temp_fragments, *_ = fragmentary_analysis(gtf_obj, to_check_fragments, len_th)
         fragments = fragments | temp_fragments
 
     else:
@@ -455,29 +501,57 @@ def remove_chimeric_and_fragments(gtf_file, len_th, paths_dt, outname, logfile, 
 
     fragments = fragments | intronic
 
+    if 'uniform' not in to_add:
+        fragments = fragments | uniform_fragments
+
+    # Optionally keep or remove chimeric transcripts, i.e. when analyzing data with PacBio data
+    temp_recovered = set()
+    if disable:
+        temp_recovered.update(rejected_overlap | rejected_segment)
+        rejected_overlap, rejected_segment = set(), set()
+
     # Remove the rejected transcript models
     to_remove = fragments | rejected_overlap | rejected_segment
-    accepted = set(gtf_obj.trans_gene_dt.keys()) - to_remove
+
+    if 'overextended' not in to_add:
+        to_remove = to_remove | overextended
+
+    accepted = (set(gtf_obj.trans_gene_dt.keys()) | temp_recovered) - to_remove
 
     outfile = write_gtf(gtf_obj, accepted, paths_dt["inter"], f"{outname}_to_reannotate.gtf")
 
-    if 'additional' in to_keep:
-        _ = write_gtf(gtf_obj, overextended, paths_dt["additional"], f"{outname}_overextended.gtf")
-        _ = write_gtf(gtf_obj, accepted_overlap, paths_dt["additional"], f"{outname}_accepted_overlap.gtf")
-        _ = write_gtf(gtf_obj, rejected_overlap, paths_dt["additional"], f"{outname}_rejected_overlap.gtf")
+    if 'exploratory' in to_keep:
+        _ = write_gtf(gtf_obj, overextended, paths_dt["exploratory"], f"{outname}_overextended.gtf")
+        _ = write_gtf(gtf_obj, uniform_fragments, paths_dt["exploratory"], f"{outname}_uniform_fragments.gtf")
+        _ = write_gtf(gtf_obj, accepted_overlap, paths_dt["exploratory"], f"{outname}_overlap_accepted.gtf")
+        _ = write_gtf(gtf_obj, rejected_overlap, paths_dt["exploratory"], f"{outname}_overlap_rejected.gtf")
 
         if selected_overlap:
-            _ = write_gtf(gtf_obj, selected_overlap, paths_dt["additional"], f"{outname}_refined_overlap.gtf")
+            _ = write_gtf(gtf_obj, selected_overlap, paths_dt["exploratory"], f"{outname}_overlap_refined.gtf")
+            _ = write_gtf(gtf_obj, selected_overlap, paths_dt["exploratory"], f"{outname}_overlap_refined.gtf")
 
     if 'removed' in to_keep:
         _ = write_gtf(gtf_obj, rejected_overlap, paths_dt["removed"], f"{outname}_rejected_overlap.gtf")
         _ = write_gtf(gtf_obj, rejected_segment, paths_dt["removed"], f"{outname}_rejected_segment.gtf")
         _ = write_gtf(gtf_obj, fragments, paths_dt["removed"], f"{outname}_fragments.gtf", w_mode="a+")
 
+        if 'overextended' not in to_add:
+            _ = write_gtf(gtf_obj, overextended, paths_dt["removed"], f"{outname}_overextended.gtf")
+
+        if 'uniform' not in to_add:
+            _ = write_gtf(gtf_obj, uniform_fragments, paths_dt["removed"], f"{outname}_uniform_fragments.gtf")
+
     # Track numbers of accepted / removed
     global_track_dt[f"Removed#{outname}_rejected_overlap.gtf"] = len(rejected_overlap)
     global_track_dt[f"Removed#{outname}_rejected_segment.gtf"] = len(rejected_segment)
     global_track_dt[f"Removed#{outname}_fragments.gtf"] = len(fragments)
+
+    if 'overextended' not in to_add:
+        global_track_dt[f"Removed#{outname}_overextended.gtf"] = len(overextended)
+
+    if 'uniform' not in to_add:
+        global_track_dt[f"Removed#{outname}_uniform_fragments.gtf"] = len(uniform_fragments)
+
     global_track_dt[f"Accepted#{outname}_to_reannotate.gtf"] = len(accepted)
 
     return outfile

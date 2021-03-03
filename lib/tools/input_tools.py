@@ -15,6 +15,52 @@ def check_input(args):
     #           args.size_th, args.keep_set,                      # Memory-related arguments
     #           paths_dt, args.prefix, args.outname, logfile)     # Output related args
 
+    # 0) Check the paths and output related arguments
+    if not args.outpath:
+        sys.exit(f'ERROR: Path for the output folder is missing')
+
+    if not args.outname:
+        sys.exit(f'ERROR: Name for the output files is missing')
+
+    if not args.prefix:
+        args.prefix = args.outname
+
+    # Filename should not contain an extension as it is used as a prefix for additional files
+    if args.outname.endswith(".gtf"):
+        args.outname = args.outname.replace(".gtf", "")
+
+    if args.size_th < 1:
+        sys.exit(f'ERROR: The maximum file size allocated for temporary files (--ram) cannot be less than 1 Gb')
+    elif args.size_th > 8:
+        sys.exit(f'ERROR: The maximum file size allocated for temporary files (--ram) cannot be more than 8 Gb')
+    else:
+        pass
+
+    # Sanitize paths
+    # Remove characters from path that may cause issues, such as quotation marks (i.e. ")
+    quote_marks = {'\'', '"'}
+    for dir_path in [args.ass_dir, args.ref_dir, args.sj_dir, args.fastq_dir, args.outpath]:
+        if dir_path:
+            for q_mark in quote_marks:
+                if dir_path.startswith(q_mark) and dir_path.endswith(q_mark):
+                    dir_path = dir_path.strip(q_mark)
+
+    # Convert relative paths to absolute, and convert path to the type used by local OS system (Linux vs Windows paths)
+    if args.ass_dir:
+        args.ass_dir = os.path.abspath(os.path.normpath(args.ass_dir))
+
+    if args.ref_dir:
+        args.ref_dir = os.path.abspath(os.path.normpath(args.ref_dir))
+
+    if args.sj_dir:
+        args.sj_dir = os.path.abspath(os.path.normpath(args.sj_dir))
+
+    if args.fastq_dir:
+        args.fastq_dir = os.path.abspath(os.path.normpath(args.fastq_dir))
+
+    if args.outpath:
+        args.outpath = os.path.abspath(os.path.normpath(args.outpath))
+
     # 1) Check the annotations provided by the user
     if not args.ass_dir and not args.ref_dir:
         sys.exit(f'ERROR: You must specify either assemblies or references to analyze, both are missing')
@@ -120,6 +166,11 @@ def check_input(args):
     else:
         args.add_set = set(args.add_set)
 
+    if 'overextended' not in args.add_set and 'uniform' not in args.add_set:
+        print(f"WARNING: It is not allowed to remove both 'overextended' and 'uniform' at the same time, as this may "
+              f"cause the complete removal of whole loci. The analysis will keep the longest transcript for these cases.")
+        args.add_set.add('overextended')
+
     if "None" in args.keep_set:
         if len(args.keep_set) != 1:
             sys.exit(f"ERROR: The 'None' option is mutually exclusive with the other options for the --keep argument.")
@@ -127,61 +178,44 @@ def check_input(args):
     else:
         args.keep_set = set(args.keep_set)
 
-    # 6) Check output related args
-    if not args.outpath:
-        sys.exit(f'ERROR: Path for the output folder is missing')
-
-    if not args.outname:
-        sys.exit(f'ERROR: Name for the output files is missing')
-
-    if not args.prefix:
-        args.prefix = args.outname
-
-    # Filename should not contain an extension as it is used as a prefix for additional files
-    if args.outname.endswith(".gtf"):
-        args.outname = args.outname.replace(".gtf", "")
-
-    if args.size_th < 1:
-        sys.exit(f'ERROR: The maximum file size allocated for temporary files (--ram) cannot be less than 1 Gb')
-    elif args.size_th > 8:
-        sys.exit(f'ERROR: The maximum file size allocated for temporary files (--ram) cannot be more than 8 Gb')
-    else:
-        pass
-
-    # Sanitize paths
-    # Convert relative paths to absolute, and convert path to the type used by local OS system (Linux vs Windows paths)
-    if args.ass_dir:
-        args.ass_dir = os.path.abspath(os.path.normpath(args.ass_dir))
-
-    if args.ref_dir:
-        args.ref_dir = os.path.abspath(os.path.normpath(args.ref_dir))
-
-    if args.sj_dir:
-        args.sj_dir = os.path.abspath(os.path.normpath(args.sj_dir))
-
-    if args.fastq_dir:
-        args.fastq_dir = os.path.abspath(os.path.normpath(args.fastq_dir))
-
-    if args.outpath:
-        args.outpath = os.path.abspath(os.path.normpath(args.outpath))
-
     return args
 
 
-def create_project_dir(outpath):
+def create_project_dir(outpath, outname, overwrite, force=True):
 
-    # 3) Generate the whole project directory structure and create a dictionary to handle the multiple subfolder paths
-    if not os.path.isdir(outpath):
-        os.makedirs(outpath)
+    # Important: create a subfolder that will contain ONLY the RTDmaker analysis
+    dir_out = os.path.abspath(os.path.normpath(os.path.join(outpath, f"{outname}_RTDmaker_output")))
+
+    # Check if the output folder has to be re-initialize
+    if overwrite and os.path.isdir(dir_out):
+        # Force the user to confirm selection
+        if force:
+            while True:
+                user_ans = input(f"Are you sure you want to delete the folder: {dir_out}? [Y/N]")
+                if user_ans.upper() == "Y" or user_ans.upper() == "YES":
+                    shutil.rmtree(dir_out)
+                    break
+                elif user_ans.upper() == "N" or user_ans.upper() == "NO":
+                    print(f"Analysis will continue with the existing files.")
+                    break
+                else:
+                    print(f"'{user_ans}' is not among the valid options. Please answer YES or NO.")
+                    continue
+        else:
+            print(f"Deleting directory: {dir_out}")
+            shutil.rmtree(dir_out)
+
+    # Generate the whole project directory structure and create a dictionary to handle the multiple subfolder paths
+    if not os.path.isdir(dir_out):
+        os.makedirs(dir_out)
 
     # Generate sanitized sub-folders paths
-    dir_out = outpath
     dir_inter = os.path.abspath(os.path.normpath(os.path.join(dir_out, "intermediary")))
     dir_removed = os.path.abspath(os.path.normpath(os.path.join(dir_out, "removed")))
     dir_report = os.path.abspath(os.path.normpath(os.path.join(dir_out, "report")))
 
     dir_log = os.path.abspath(os.path.normpath(os.path.join(dir_report, "logfiles")))
-    dir_chm = os.path.abspath(os.path.normpath(os.path.join(dir_inter, "additional")))
+    dir_chm = os.path.abspath(os.path.normpath(os.path.join(dir_inter, "exploratory")))
     dir_high = os.path.abspath(os.path.normpath(os.path.join(dir_inter, "abundant")))
     dir_quant = os.path.abspath(os.path.normpath(os.path.join(dir_inter, "quantification")))
 
@@ -189,7 +223,7 @@ def create_project_dir(outpath):
 
     # Create the paths and and track their location to facilitate their handling inside the code
     paths = [("outpath", dir_out), ("inter", dir_inter), ("removed", dir_removed), ("report", dir_report),
-             ("additional", dir_chm), ("low_abundant", dir_low), ("abundant", dir_high), ("quant", dir_quant),
+             ("exploratory", dir_chm), ("low_abundant", dir_low), ("abundant", dir_high), ("quant", dir_quant),
              ("logs", dir_log)]
 
     paths_dt = {}
